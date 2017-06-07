@@ -1,15 +1,13 @@
-# mitm
 Man In The Middle (Pythonista 3)
-mitm
+
 =======
 Now with round-robin & improved options!
 
 Bugs:
 @crypt0s - Twitter
+
 Pythonista Bugs:
 @russian_otter - Instagram
-
-bryanhalf@gmail.com - Email
 
 UR - Unmatched Request
 MR - Matched Request
