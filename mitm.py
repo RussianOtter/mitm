@@ -3,6 +3,25 @@ Extended Mod for Pythonista 3 by RussianOtter"""
 
 import pdb, socket, re, sys, os, SocketServer, signal, argparse, logging
 
+try:
+	import console
+	console.set_color(1,0,0)
+	print """       __  __ ___ _____ __  __  
+      |  \/  |_ _|_   _|  \/  | 
+      | |\/| || |  | | | |\/| | 
+      | |  | || |  | | | |  | | 
+      |_|  |_|___| |_| |_|  |_| 
+      """
+	console.set_color()
+except:
+	print """       __  __ ___ _____ __  __  
+      |  \/  |_ _|_   _|  \/  | 
+      | |\/| || |  | | | |\/| | 
+      | |  | || |  | | | |  | | 
+      |_|  |_|___| |_| |_|  |_| 
+      """
+	pass
+
 class ThreadedUDPServer(SocketServer.ThreadingMixIn, SocketServer.UDPServer):
 	def __init__(self, server_address, request_handler):
 		self.address_family = socket.AF_INET
@@ -375,7 +394,6 @@ def signal_handler(signal, frame):
 	sys.exit()
 
 if __name__ == '__main__':
-
 	parser = argparse.ArgumentParser(description='A Python DNS Server')
 	parser.add_argument(
 		'-c', dest='path', action='store', required=True,
@@ -414,8 +432,43 @@ if __name__ == '__main__':
 
 	try:
 		server = ThreadedUDPServer((interface, int(port)), UDPHandler)
-		data = "STARTED "+interface+":"+port
-		print data
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			s.connect(("8.8.8.8",80))
+			ip = s.getsockname()[0]
+		except:
+			ip = "0.0.0.0"
+			print "No Connection"
+		try:
+			from objc_util import *
+			CNCopyCurrentNetworkInfo = c.CNCopyCurrentNetworkInfo
+			CNCopyCurrentNetworkInfo.restype = c_void_p
+			CNCopyCurrentNetworkInfo.argtypes = [c_void_p]
+			wifiid = ObjCInstance(CNCopyCurrentNetworkInfo(ns('en0')))
+			wifiid = wifiid["SSID"]
+		except:
+			wifiid = "[Your WiFi]"
+		try:
+			ips = ip.split(".")
+			opt = []
+			ips[3] = "1"
+			opt.append(".".join(ips))
+			ips[3] = "254"
+			opt.append(".".join(ips))
+			for srv in opt:
+				try:
+					s.connect((srv,53))
+					dns = srv
+					break
+				except:
+					dns = "[Main DNS]"
+		except:
+			dns = "[Main DNS]"
+		print "MITM DNS",ip,port
+		print "\nFor Self Logging:"
+		print "Settings>WiFi>%s\nChange DNS To:\n%s, %s\n" %(wifiid,ip,dns)
+		print "For WiFi Logging:"
+		print "Access your WiFi Control Pannel, make DNS1: %s and make DNS2: %s" %(ip,dns)
 	except socket.error:
 		print "Port {0} Taken.\n!Toggle Port!".format(port)
 		exit(1)
