@@ -1,7 +1,7 @@
-"""Fakedns.py: A regular-expression based DNS MITM Server by Crypt0s.
+"""mitm.py: A regular-expression based DNS MITM Server by Crypt0s.
 Extended Mod for Pythonista 3 by RussianOtter"""
 
-import pdb, socket, re, sys, os, SocketServer, signal, argparse
+import pdb, socket, re, sys, os, SocketServer, signal, argparse, logging
 
 class ThreadedUDPServer(SocketServer.ThreadingMixIn, SocketServer.UDPServer):
 	def __init__(self, server_address, request_handler):
@@ -13,7 +13,6 @@ class UDPHandler(SocketServer.BaseRequestHandler):
 	def handle(self):
 		(data, s) = self.request
 		respond(data, self.client_address, s)
-
 
 class DNSQuery:
 	def __init__(self, data):
@@ -31,6 +30,14 @@ class DNSQuery:
 		else:
 			self.type = data[-4:-2]
 
+def nf_count():
+	global a
+	try:
+		a = a + 1
+	except:
+		a = 0
+	return str(a)
+
 TYPE = {
 	"\x00\x01": "A",
 	"\x00\x1c": "AAAA",
@@ -38,13 +45,11 @@ TYPE = {
 	"\x00\x0c": "PTR",
 	"\x00\x10": "TXT",
 	"\x00\x0f": "MX",
-	"\x00\x06":"SOA"
+	"\x00\x06": "SOA"
 }
 
 def _is_shorthand_ip(ip_str):
-	"""Determine if the address is shortened.
-	Args:
-		ip_str: A string, the IPv6 address.
+	"""
 	Returns:
 		A boolean, True if the address is shortened.
 	"""
@@ -56,9 +61,6 @@ def _is_shorthand_ip(ip_str):
 
 def _explode_shorthand_ip_string(ip_str):
 	"""
-	Expand a shortened IPv6 address.
-	Args:
-		ip_str: A string, the IPv6 address.
 	Returns:
 		A string, the expanded IPv6 address.
 	"""
@@ -194,7 +196,7 @@ class NONEFOUND(DNSResponse):
 		self.rranswers = "\x00\x00"
 		self.length = "\x00\x00"
 		self.data = "\x00"
-		print ">> Built NONEFOUND response\n"
+		sys.stdout.write("\r\rNONEFOUND Response %s     " %(nf_count()))
 
 class Rule (object):
 	def __init__(self, rule_type, domain, ips, rebinds, threshold):
@@ -203,7 +205,6 @@ class Rule (object):
 		self.ips = ips
 		self.rebinds = rebinds
 		self.rebind_threshold = threshold
-
 		if self.rebinds is not None:
 			self.match_history = {}
 			self.rebinds = self._round_robin(rebinds)
@@ -211,8 +212,7 @@ class Rule (object):
 
 	def _round_robin(self, ip_list):
 		"""
-		Creates a generator over a list modulo list length to equally move between all elements in the list each request
-		Since we have rules broken out into objects now, we can have this without much overhead.
+		Creates a generator over a list modulo list length to equally move between all elements in the list each request.
 		"""
 		if len(ip_list) == 1:
 			ip_list.append(ip_list[0])
@@ -254,15 +254,18 @@ class Rule (object):
 
 class RuleError_BadRegularExpression(Exception):
 	def __init__(self,lineno):
-		print "\n!! Malformed Regular Expression on rulefile line #%d\n\n" % lineno
+		logging.error("\n!! Malformed Regular Expression on rulefile line #%d\n\n" % lineno)
+		sys.exit()
 
 class RuleError_BadRuleType(Exception):
 	def __init__(self,lineno):
-		print "\n!! Rule type unsupported on rulefile line #%d\n\n" % lineno
+		logging.error("\n!! Rule type unsupported on rulefile line #%d\n\n" % lineno)
+		sys.exit()
 
 class RuleError_BadFormat(Exception):
 	def __init__(self,lineno):
-		print "\n!! Not Enough Parameters for rule on rulefile line #%d\n\n" % lineno
+		logging.error("\n!! Not Enough Parameters for rule on rulefile line #%d\n\n" % lineno)
+		sys.exit()
 
 
 class RuleEngine2:
@@ -272,8 +275,7 @@ class RuleEngine2:
 				try:
 					self_ip = socket.gethostbyname(socket.gethostname())
 				except socket.error:
-					print ">> Could not get your IP address from your " \
-						  "DNS Server."
+					print "Could not get your IP address for mitm."
 					self_ip = '127.0.0.1'
 				ips[ips.index(ip)] = self_ip
 		return ips
@@ -281,7 +283,6 @@ class RuleEngine2:
 	def __init__(self, file_):
 		"""
 		Parses the DNS Rulefile, validates the rules, replaces keywords
-
 		"""
 		self.match_history = {}
 		self.rule_list = []
@@ -322,24 +323,19 @@ class RuleEngine2:
 					for ip in ips:
 						if _is_shorthand_ip(ip):
 							ip = _explode_shorthand_ip_string(ip)
-
 						ip = ip.replace(":", "").decode('hex')
 						tmp_ip_array.append(ip)
 					ips = tmp_ip_array
 				self.rule_list.append(Rule(rule_type, domain, ips, rebinds, rebind_threshold))
-
 				lineno += 1
-
-			print ">>> Parsed %d rules from %s" % (len(self.rule_list),file_)
+			
+			data = str(path)+" Parsed "+str(len(self.rule_list))+" Rules"
+			print data
 
 	def match(self, query, addr):
 		"""
 		See if the request matches any rules in the rule list by calling the
-		match function of each rule in the list
-
-		The rule checks two things before it continues so I imagine this is
-		probably still fast
-
+		match function of each rule in the list.
 		"""
 		for rule in self.rule_list:
 			result = rule.match(query.type, query.domain, addr)
@@ -351,11 +347,11 @@ class RuleEngine2:
 
 				response = CASE[query.type](query, response_data)
 
-				print "\r\nMR - " + query.domain
+				print "\r\rMR - " + query.domain
 				return response.make_packet()
 
 		if args.noforward:
-			print "\r\nDF %s" % query.domain
+			print "\r\rDF %s" % query.domain
 			return NONEFOUND(query).make_packet()
 		try:
 			s = socket.socket(type=socket.SOCK_DGRAM)
@@ -364,7 +360,7 @@ class RuleEngine2:
 			s.sendto(query.data, addr)
 			data = s.recv(1024)
 			s.close()
-			print "\rUR " + query.domain
+			print "\r\rUR " + query.domain
 			return data
 		except socket.error, e:
 			return NONEFOUND(query).make_packet()
@@ -376,8 +372,7 @@ def respond(data, addr, s):
 	return response
 
 def signal_handler(signal, frame):
-	print 'Stopped'
-	sys.exit(0)
+	sys.exit()
 
 if __name__ == '__main__':
 
@@ -387,10 +382,10 @@ if __name__ == '__main__':
 		help='Path to configuration file')
 	parser.add_argument(
 		'-i', dest='iface', action='store', default='0.0.0.0', required=False,
-		help='IP address you wish to run FakeDns with - default all')
+		help='IP address you wish to run mitm with - default all')
 	parser.add_argument(
 		'-p', dest='port', action='store', default=53, required=False,
-		help='Port number you wish to run FakeDns')
+		help='Port number you wish to run mitm')
 	parser.add_argument(
 		'--rebind', dest='rebind', action='store_true', required=False,
 		default=False, help="Enable DNS rebinding attacks - responds with one "
@@ -401,15 +396,14 @@ if __name__ == '__main__':
 	)
 	parser.add_argument(
 		'--noforward', dest='noforward', action='store_true', default=False, required=False,
-		help='Sets if FakeDNS should forward any non-matching requests'
+		help='Sets if mitm should forward any non-matching requests'
 	)
 
 	args = parser.parse_args()
 
 	path = args.path
 	if not os.path.isfile(path):
-		print '>> Please create a "dns.conf" file or specify a config path: ' \
-			  './fakedns.py [configfile]'
+		print "FILE\n Please create a \"dns.conf\" file or specify a config path: \nmitm.py -c [configfile]"
 		exit()
 
 	rules = RuleEngine2(path)
@@ -420,8 +414,10 @@ if __name__ == '__main__':
 
 	try:
 		server = ThreadedUDPServer((interface, int(port)), UDPHandler)
+		data = "STARTED "+interface+":"+port
+		print data
 	except socket.error:
-		print ">> Could not start server -- is another program on udp:{0}?".format(port)
+		print "Port {0} Taken.\n!Toggle Port!".format(port)
 		exit(1)
 
 	server.daemon = True
