@@ -1,7 +1,7 @@
 """mitm.py: A regular-expression based DNS MITM Server by Crypt0s.
 Extended Mod for Pythonista 3 by RussianOtter"""
 
-import pdb, socket, re, sys, os, SocketServer, signal, argparse, logging
+import pdb, socket, re, sys, os, SocketServer, signal, argparse, logging, struct, printbyte
 
 try:
 	import console
@@ -21,6 +21,52 @@ except:
       |_|  |_|___| |_| |_|  |_| 
       """
 	pass
+
+def decodel(msg, offset):
+	labels = []
+	while True:
+		lgt, = struct.unpack_from("!B", msg, offset)
+		if (lgt & 0xC0) == 0xC0:
+			pnt, = struct.unpack_from("!H", msg, offset)
+			offset += 2
+			return labels + decodel(msg, pnt & 0x3FFF), offset
+
+		if (lgt & 0xC0) != 0x00:
+			raise StandardError("unknown label encoding")
+		offset += 1
+		if lgt == 0:
+			return labels, offset
+
+		labels.append(*struct.unpack_from("!%ds" % lgt, msg, offset))
+		offset += lgt
+dnsqsf = struct.Struct("!2H")
+
+def decodeqs(msg, offset, qdcount):
+	questions = []
+	for _ in range(qdcount):
+		qname, offset = decodel(msg, offset)
+		qtype, qclass = dnsqsf.unpack_from(msg, offset)
+		offset += dnsqsf.size
+		question = {"domain_name": qname,
+					"query_type": qtype,
+					"query_class": qclass}
+		questions.append(question)
+	return questions, offset
+dnsqmh = struct.Struct("!6H")
+
+def decodedm(msg, ttt):
+	id, misc, qdcount, ancount, nscount, arcount = dnsqmh.unpack_from(msg)
+	qr = (misc & 0x8000) != 0
+	opcode = (misc & 0x7800) >> 11
+	aa = (misc & 0x0400) != 0
+	tc = (misc & 0x200) != 0
+	rd = (misc & 0x100) != 0
+	ra = (misc & 0x80) != 0
+	z = (misc & 0x70) >> 4
+	rcode = misc & 0xF
+	offset = dnsqmh.size
+	questions, offset = decodeqs(msg, offset, qdcount)
+	print "\r\r\n\r\r\rid: %s\n\r\r\ranswer count: %s\n\r\r\rauthoritative: %s\n\r\r\rresponse code: %s\n\r\r\rquestion count: %s\n\r\r\rauthority count: %s\n%s" %(id,ancount,aa,rcode,qdcount,nscount,ttt)
 
 class ThreadedUDPServer(SocketServer.ThreadingMixIn, SocketServer.UDPServer):
 	def __init__(self, server_address, request_handler):
@@ -379,7 +425,17 @@ class RuleEngine2:
 			s.sendto(query.data, addr)
 			data = s.recv(1024)
 			s.close()
-			print "\r\rUR " + query.domain
+			if verbose:
+				note = "\r\rFlags: "+printbyte.byte_pbyte(A(query,"0.0.0.0").flags)+"\n\r\rType: "+TYPE[query.type]+"\n\r\rUnmatched "+query.domain
+				if raw:
+					decodedm(data,note+"\r\r\n\r\r"+printbyte.byte_pbyte(data)+"\n")
+				else:
+					decodedm(data,note)
+			else:
+				if rraw:
+					print "\r\rUnmatched %s\n%s\n" %(query.domain, printbyte.byte_pbyte(data))
+				else:
+					print "\r\rUR " + query.domain
 			return data
 		except socket.error, e:
 			return NONEFOUND(query).make_packet()
@@ -394,7 +450,7 @@ def signal_handler(signal, frame):
 	sys.exit()
 
 if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='A Python DNS Server')
+	parser = argparse.ArgumentParser(description='Python MITM DNS Server')
 	parser.add_argument(
 		'-c', dest='path', action='store', required=True,
 		help='Path to configuration file')
@@ -410,13 +466,12 @@ if __name__ == '__main__':
 		"result the first request, and another result on subsequent requests")
 	parser.add_argument(
 		'--dns', dest='dns', action='store', default='8.8.8.8', required=False,
-		help='IP address of the upstream dns server - default 8.8.8.8'
-	)
+		help='IP address of the upstream dns server - default 8.8.8.8')
 	parser.add_argument(
 		'--noforward', dest='noforward', action='store_true', default=False, required=False,
-		help='Sets if mitm should forward any non-matching requests'
-	)
-
+		help='Sets if mitm should forward any non-matching requests')
+	parser.add_argument("-v","--verbose",action="store_true", required=False, default=False,help="Get DNS Packet Information")
+	parser.add_argument("-r","--raw",action="store_true",help="Print Raw DNS Packets",required=False)
 	args = parser.parse_args()
 
 	path = args.path
@@ -426,8 +481,9 @@ if __name__ == '__main__':
 
 	rules = RuleEngine2(path)
 	rule_list = rules.rule_list
-
 	interface = args.iface
+	verbose = args.verbose
+	raw = args.raw
 	port = args.port
 
 	try:
