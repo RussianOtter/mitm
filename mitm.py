@@ -432,7 +432,7 @@ class RuleEngine2:
 				else:
 					decodedm(data,note)
 			else:
-				if rraw:
+				if raw:
 					print "\r\rUnmatched %s\n%s\n" %(query.domain, printbyte.byte_pbyte(data))
 				else:
 					print "\r\rUR " + query.domain
