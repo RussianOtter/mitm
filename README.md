@@ -1,10 +1,9 @@
+[![Build Status](https://travis-ci.org/RussianOtter/mitm.svg?branch=master)](https://travis-ci.org/RussianOtter/mitm)
+
 Man In The Middle (Pythonista 3)
 ================================
 
 Now with round-robin & improved options!
-
-Bugs:
-@crypt0s - Twitter
 
 Pythonista Bugs:
 @russian_otter - Instagram
